@@ -1,0 +1,235 @@
+---
+title: "Change Detection on the Walker Lake"
+author: "Christabel Edena Ansah"
+date: "April 22, 2019"
+output:
+  ioslides_presentation: default
+  beamer_presentation: default
+---
+
+```{r setup, include=FALSE}
+library(raster)
+library(rgdal)  
+library(RStoolbox)
+library(ggplot2) 
+library(randomForest)
+library(maptools)
+library(sp)
+library(rgeos)
+library(ggmap)
+library(ggsn)
+library(maps)
+setwd("C:/Users/User/Desktop/R Project")
+```
+## Introduction
+  
+  + A natural lake, in the Great Basin in western Nevada in the United States.
+  
+  + 11 mi (17 km) long and 5 mi (8 km) wide.
+  
+  + Fed from the north by the Walker River and has no natural outlet.
+  
+  + Over the years changes have occured on the lake and its environs.
+  
+  + There has been reductions in inflow and continued evaporation of water from the lake.
+  
+  + These changes were detected using Random Forest and Maximum Likelihood Classification. 
+  
+## Problem Statement
+  
+  + The introduction of agriculture upstream of Walker Lake has resulted in the diversion of water from the Walker River and its tributaries for irrigation.
+  
+  + These diversions have resulted in a severe drop in the level of the lake. 
+  
+  + The reduction in the volume of water has resulted in a higher concentration of total dissolved solids. 
+  
+  + Decline of the lake's fishery which is having a dramatic impact on the species of birds using the lake.
+  
+## Downloaded Landsat 5 and 8 scene for this study
+```{r, echo=TRUE, eval=TRUE}
+#Load both Landsat 5 and 8 scenes
+LS_1984 <- brick("Walker_Lake/1984/1984_Composite/Tif/1984.tif")
+LS_2018 <- brick("Walker_Lake/2018/2018_Composite/Tif/2018.tif")
+```
+```{r, echo=TRUE, eval=TRUE, results='hide', message=FALSE}
+#Load the study area boundary shapefile
+Study_area <- readOGR("Walker_Lake/Study_Area_Boundary/Boundary.shp")
+
+```
+## Reprojecting coordinate system
+  + The coordinate system of Landsat scenes was WGS_1984_UTM_Zone_11N. 
+  
+  + The same was used when creating the study area boundary shapefile in ArcMap.
+  
+```{r, echo=TRUE,eval=FALSE} 
+projection(LS_1984)
+projection(LS_2018)
+projection(Study_area)
+```
+```{r, echo=TRUE,eval=TRUE} 
+Study_area <- spTransform(Study_area, CRS(proj4string(LS_1984)))
+```
+```{r, echo=TRUE,eval=FALSE} 
+
+#Set NA value to RASTER NA value.
+NAvalue(LS_1984) <- 0
+NAvalue(LS_2018) <- 0 
+```
+
+## Plotting Study Area
+```{r, echo=TRUE,eval=FALSE} 
+#Plot the study area on top of the Landsat image to see if the reprojection has worked using the plotRGB tool
+plotRGB(LS_1984, r=1, g=4, b=7, stretch="lin")
+plotRGB(LS_2018, r=5, g=6, b=4, stretch='lin')
+plot(Study_area, col="green", add=TRUE)
+
+#Resize Landsat scenes to the required study area using the crop function
+StudyArea_1984 <- crop(LS_1984, Study_area)
+StudyArea_2018 <- crop(LS_2018, Study_area)
+plotRGB(StudyArea_1984,r=1, g=4, b=7, stretch="lin")
+plotRGB(StudyArea_2018,r=5, g=6, b=4, stretch="lin")
+```
+
+##  Walker Lake 1984
+```{r, echo=FALSE,eval=TRUE}
+#Resize Landsat scenes to the required study area using the crop function
+StudyArea_1984 <- crop(LS_1984, Study_area)
+StudyArea_2018 <- crop(LS_2018, Study_area)
+plotRGB(StudyArea_1984,r=1, g=4, b=7, stretch="lin")
+```
+
+## Walker Lake 2018
+```{r, echo=FALSE,eval=TRUE}
+plotRGB(StudyArea_2018,r=5, g=6, b=4, stretch="lin")
+```
+
+## Study Area
+```{r, echo=TRUE}
+img <- stack(StudyArea_1984, StudyArea_2018)
+plotRGB(img,r=1, g=4, b=7, stretch="lin")
+td <- shapefile("Walker_Lake/Training_Data/Training_Data.shp")
+plot(td, col="yellow", add=T)
+
+```
+
+## Image Classification using RF and MLC
+```{r, echo=TRUE,results='hide', message=FALSE}
+#Image classification of the two landsat scenes
+beginCluster()
+set.seed(7)
+img1984_2018_rf = 
+  superClass(img = img, trainData = td, trainPartition = 0.7, 
+              responseCol = "Class_Name", nSamples = 500,
+              areaWeightedSampling = TRUE,  
+              model = "rf", mode = "classification", verbose = FALSE)
+
+## Image Classification using MLC
+set.seed(7)
+img1984_2018_mlc = 
+  superClass(img = img, trainData = td, trainPartition = 0.7, 
+              responseCol = "Class_Name", nSamples = 500, 
+              areaWeightedSampling = TRUE,  
+              model = "mlc", mode = "classification", verbose = FALSE)
+endCluster()
+```
+## Plotting Classification Output of RF
+```{r, echo=TRUE,eval=FALSE}
+#Random Forest
+windows()
+
+ggR(img1984_2018_rf$map, layer = 1, geom_raster = TRUE,forceCat=TRUE)+
+  theme(legend.title = element_text(size = 12, face = "bold"))+
+  theme(legend.text = element_text(size = 10))+
+  scale_fill_manual(values = c("lightsalmon4", "chocolate1", "darkgreen", 
+                    "burlywood3", "chartreuse", "blue"),
+                    labels=img1984_2018_rf$classMapping$class,
+                    name="class name:\n",
+                    na.value = "NA",na.translate=FALSE
+  )+
+  xlab("")+
+  ylab("")
+north2(img1984_2018_rf$map, x = 0.1, y = 0.8, scale = 0.09, symbol = 1)
+
+```
+
+## RF Output
+  + Overall accuracy attained was 98.9%
+  
+  + kappa value of 0.986
+```{r, echo=FALSE, eval=TRUE, results='hide', message=FALSE}
+windows()
+
+ggR(img1984_2018_rf$map, layer = 1, geom_raster = TRUE,forceCat=TRUE)+
+  theme(legend.title = element_text(size = 12, face = "bold"))+
+  theme(legend.text = element_text(size = 10))+
+  scale_fill_manual(values = c("lightsalmon4", "chocolate1", "darkgreen", 
+                    "burlywood3", "chartreuse", "blue"),
+                    labels=img1984_2018_rf$classMapping$class,
+                    name="class name:\n",
+                    na.value = "NA",na.translate=FALSE
+  )+
+  xlab("")+
+  ylab("")
+north2(img1984_2018_rf$map, x = 0.1, y = 0.8, scale = 0.09, symbol = 1)
+```
+
+## Plotting Classification Output of MLC
+```{r, echo=TRUE,eval=FALSE}
+windows()
+
+ggR(img1984_2018_mlc$map, layer = 1, geom_raster = TRUE,forceCat=TRUE)+
+  theme(legend.title = element_text(size = 12, face = "bold"))+
+  theme(legend.text = element_text(size = 10))+
+  scale_fill_manual(values = c("lightsalmon4", "chocolate1", "darkgreen", 
+                    "burlywood3", "chartreuse", "blue"),
+                    labels=img1984_2018_mlc$classMapping$class,
+                    name="class name:\n",
+                    na.value = "NA",na.translate=FALSE
+  )+
+  xlab("")+
+  ylab("")
+north2(img1984_2018_mlc$map, x = 0.1, y = 0.785, scale = 0.09, symbol = 1)
+```
+
+## MLC Output
+  + Overall accuracy attained was 95%
+  
+  + kappa value of 0.926
+```{r, echo=FALSE,eval=TRUE,results='hide',message=FALSE}
+windows()
+
+ggR(img1984_2018_mlc$map, layer = 1, geom_raster = TRUE,forceCat=TRUE)+
+  theme(legend.title = element_text(size = 12, face = "bold"))+
+  theme(legend.text = element_text(size = 10))+
+  scale_fill_manual(values = c("lightsalmon4", "chocolate1", "darkgreen", 
+                    "burlywood3", "chartreuse", "blue"),
+                    labels=img1984_2018_mlc$classMapping$class,
+                    name="class name:\n",
+                    na.value = "NA",na.translate=FALSE
+  )+
+  xlab("")+
+  ylab("")
+north2(img1984_2018_mlc$map, x = 0.1, y = 0.785, scale = 0.09, symbol = 1)
+```
+
+## Conclusion
+  + RF attained the highest accuracy and Kappa value. 
+  
+  + Water, land and vegetation are very easy classes to identify.
+  
+  + This can be attributed to the high accuracies in general.
+  
+  + RF can be said to be the best classifer in this case.
+  
+  + Put in place measures to prevent Lake Walker's extinction.
+
+
+## Reference
+  + Beutel, M. W., Horne, A. J., Roth, J. C., & Barratt, N. J. (2001). Limnological effects of anthropogenic 
+    desiccation of a large, saline lake, Walker Lake, Nevada. In Saline Lakes (pp. 91-105). Springer, Dordrecht.
+
+  + Dickerson, B. R., & Vinyard, G. L. (1999). Effects of high levels of total dissolved solids in Walker Lake, 
+    Nevada, on survival and growth of Lahontan cutthroat trout. Transactions of the American Fisheries Society, 
+    128(3), 507-515.
+
+  + To access the script: https://github.com/ChristabelAnsah
